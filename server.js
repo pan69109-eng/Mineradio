@@ -463,8 +463,8 @@ async function handleSpotifyPlaylistTracks(id) {
   const info = await getSpotifyLoginInfo();
   if (!info.loggedIn) return { provider: 'spotify', loggedIn: false, tracks: [] };
   if (!id) return { provider: 'spotify', loggedIn: true, error: 'Missing Spotify playlist id', tracks: [] };
-  const data = await spotifyApiGet('/playlists/' + encodeURIComponent(id) + '/tracks', { limit: '100', market: 'from_token' });
-  const tracks = ((data && data.items) || []).map(it => spotifyMapTrack(it && it.track)).filter(t => t.id);
+  const data = await spotifyApiGet('/playlists/' + encodeURIComponent(id) + '/items', { limit: '100', market: 'from_token' });
+  const tracks = ((data && data.items) || []).map(it => spotifyMapTrack(it && (it.track || it.item))).filter(t => t.id);
   return { provider: 'spotify', loggedIn: true, tracks };
 }
 
