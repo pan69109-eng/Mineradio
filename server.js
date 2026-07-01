@@ -222,6 +222,8 @@ const SPOTIFY_SCOPES = [
   'user-modify-playback-state',
   'playlist-read-private',
   'playlist-read-collaborative',
+  'user-library-modify',
+  'user-library-read',
 ].join(' ');
 const SPOTIFY_ACCOUNTS = 'https://accounts.spotify.com';
 const SPOTIFY_API = 'https://api.spotify.com/v1';
@@ -331,6 +333,32 @@ async function spotifyApiGet(apiPath, params) {
       await spotifyRefresh();
       token = spotifyToken.access_token;
       return JSON.parse(await requestText(target, { headers: { Authorization: 'Bearer ' + token } }));
+    }
+    throw err;
+  }
+}
+
+async function spotifyApiRequest(method, apiPath, body) {
+  let target = apiPath.startsWith('http') ? apiPath : (SPOTIFY_API + apiPath);
+  let token = await spotifyAccessToken();
+  const opts = {
+    method: method,
+    headers: {
+      'Authorization': 'Bearer ' + token,
+    }
+  };
+  const bodyStr = body ? JSON.stringify(body) : null;
+  if (bodyStr) opts.headers['Content-Type'] = 'application/json';
+  try {
+    const text = await requestText(target, opts, bodyStr);
+    return text ? JSON.parse(text) : {};
+  } catch (err) {
+    if (err.statusCode === 401) {
+      await spotifyRefresh();
+      token = spotifyToken.access_token;
+      opts.headers['Authorization'] = 'Bearer ' + token;
+      const text = await requestText(target, opts, bodyStr);
+      return text ? JSON.parse(text) : {};
     }
     throw err;
   }
@@ -4314,6 +4342,35 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---------- Spotify 红心状态检查 ----------
+  if (pn === '/api/spotify/song/like/check') {
+    try {
+      const ids = String(url.searchParams.get('ids') || '').split(',').filter(Boolean);
+      if (!ids.length) { sendJSON(res, { error: 'Missing ids', liked: {} }, 400); return; }
+      const uris = ids.map(id => 'spotify:track:' + id);
+      const data = await spotifyApiGet('/me/library/contains', { uris: uris.join(',') });
+      const liked = {};
+      ids.forEach((id, i) => { liked[id] = !!data[i]; });
+      sendJSON(res, { loggedIn: true, ids, liked });
+    } catch (err) {
+      console.error('[SpotifyLikeCheck]', err);
+      let status = 500;
+      let message = err.message || 'Spotify 红心状态检查失败';
+      if (err.message === 'SPOTIFY_LOGIN_REQUIRED') {
+        status = 401;
+        message = '请先登录 Spotify';
+      } else if (err.statusCode === 403) {
+        status = 403;
+        message = '权限不足，请重新登录并同意音乐库权限';
+      } else if (err.statusCode === 429) {
+        status = 429;
+        message = '请求过于频繁，请稍后再试';
+      }
+      sendJSON(res, { error: message, liked: {} }, status);
+    }
+    return;
+  }
+
   // ---------- 红心/取消红心 ----------
   if (pn === '/api/song/like') {
     try {
@@ -4329,6 +4386,36 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[Like]', err);
       sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
+  // ---------- Spotify 红心/取消红心 ----------
+  if (pn === '/api/spotify/song/like') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const id = body.id || url.searchParams.get('id');
+      const nextLike = String(body.like != null ? body.like : (url.searchParams.get('like') || 'true')) !== 'false';
+      if (!id) { sendJSON(res, { error: 'Missing song id' }, 400); return; }
+      const method = nextLike ? 'PUT' : 'DELETE';
+      const uri = 'spotify:track:' + id;
+      await spotifyApiRequest(method, '/me/library?uris=' + encodeURIComponent(uri));
+      sendJSON(res, { loggedIn: true, id, liked: nextLike });
+    } catch (err) {
+      console.error('[SpotifyLike]', err);
+      let status = 500;
+      let message = err.message || 'Spotify 红心操作失败';
+      if (err.message === 'SPOTIFY_LOGIN_REQUIRED') {
+        status = 401;
+        message = '请先登录 Spotify';
+      } else if (err.statusCode === 403) {
+        status = 403;
+        message = '权限不足，请重新登录并同意音乐库权限';
+      } else if (err.statusCode === 429) {
+        status = 429;
+        message = '请求过于频繁，请稍后再试';
+      }
+      sendJSON(res, { error: message }, status);
     }
     return;
   }
