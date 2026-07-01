@@ -9331,7 +9331,8 @@ function tickLyricsParticles() {
     }
     return;
   }
-  var t = audio.currentTime;
+  var t = spotifyIsActive() ? spotifyCurrentPositionMs() / 1000 : (audio ? audio.currentTime : 0);
+  var audioDuration = spotifyIsActive() ? (spotifyState.durationMs / 1000) : (audio && isFinite(audio.duration) ? audio.duration : 0);
   var newIdx = -1;
   for (var i = 0; i < lyricsLines.length; i++) {
     if (lyricsLines[i].t <= t + 0.05) newIdx = i; else break;
@@ -9348,7 +9349,7 @@ function tickLyricsParticles() {
     }
     if (stageLyrics.current) {
       var firstLine = lyricsLines[0];
-      var introEnd = firstLine && firstLine.t > 0 ? firstLine.t : Math.min((audio && audio.duration) || 4.8, 4.8);
+      var introEnd = firstLine && firstLine.t > 0 ? firstLine.t : Math.min(audioDuration || 4.8, 4.8);
       var introLine = { t:0, text:introText, duration:Math.max(0.8, introEnd), charCount:Math.max(1, introText.length), fallback:true };
       updateLyricMeshProgress(stageLyrics.current, getLyricLineProgress(introLine, null, t));
     }
@@ -18688,6 +18689,7 @@ async function playSpotifyTrack(song, token, opts) {
     safePlaybackStep('spotify-session-begin', function(){ beginListenSession(song, opts.context || null); });
     safeRenderQueuePanel('spotify-play');
     scheduleShelfRebuild('spotify-play', true);
+    fetchLyric(song, token);
   } catch (err) {
     console.error('[SpotifyPlay]', err);
     hideLoading();
@@ -19346,6 +19348,11 @@ async function fetchLyric(songOrId, token) {
       var mid = song.mid || song.songmid || song.id || '';
       var qqId = song.qqId || (/^\d+$/.test(String(song.id || '')) ? song.id : '');
       endpoint = '/api/qq/lyric?mid=' + encodeURIComponent(mid) + '&id=' + encodeURIComponent(qqId);
+    } else if (provider === 'spotify') {
+      endpoint = '/api/spotify/lyric?trackName=' + encodeURIComponent(song.name || '')
+        + '&artistName=' + encodeURIComponent(song.artist || '')
+        + '&albumName=' + encodeURIComponent(song.album || '')
+        + '&durationMs=' + encodeURIComponent(song.duration || 0);
     } else {
       var songId = song ? song.id : songOrId;
       endpoint = '/api/lyric?id=' + encodeURIComponent(songId);
@@ -26662,7 +26669,8 @@ function normalizeDesktopLyricText(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 function currentDesktopLyricSnapshot() {
-  var t = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
+  var t = spotifyIsActive() ? spotifyCurrentPositionMs() / 1000 : (audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0);
+  var audioDuration = spotifyIsActive() ? (spotifyState.durationMs / 1000) : (audio && isFinite(audio.duration) ? Number(audio.duration) : 0);
   var lines = Array.isArray(lyricsLines) ? lyricsLines : [];
   if (playing && audio && lines.length) {
     var idx = -1;
@@ -26673,7 +26681,7 @@ function currentDesktopLyricSnapshot() {
     if (idx >= 0) {
       var curLine = lines[idx] || { t:t, text:'' };
       var nextLine = lines[idx + 1];
-      var nextT = nextLine && nextLine.t > curLine.t ? nextLine.t : Math.min((audio && audio.duration) || t + 4, curLine.t + (curLine.duration || 4.8));
+      var nextT = nextLine && nextLine.t > curLine.t ? nextLine.t : Math.min(audioDuration || t + 4, curLine.t + (curLine.duration || 4.8));
       var span = Math.max(0.75, nextT - curLine.t);
       return {
         text: normalizeDesktopLyricText(curLine.text || currentLyricFallbackText()),
@@ -26684,7 +26692,7 @@ function currentDesktopLyricSnapshot() {
     var introText = normalizeDesktopLyricText(currentLyricFallbackText());
     if (introText) {
       var firstLine = lines[0];
-      var introEnd = firstLine && firstLine.t > 0 ? firstLine.t : Math.min((audio && audio.duration) || 4.8, 4.8);
+      var introEnd = firstLine && firstLine.t > 0 ? firstLine.t : Math.min(audioDuration || 4.8, 4.8);
       return {
         text: introText,
         progress: getLyricLineProgress({ t:0, text:introText, duration:Math.max(0.8, introEnd), charCount:Math.max(1, introText.length), fallback:true }, null, t),
@@ -26729,8 +26737,8 @@ function desktopLyricsMotionPayload() {
   };
 }
 function desktopLyricsPlaybackPayload() {
-  var time = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
-  var duration = audio && isFinite(audio.duration) ? Number(audio.duration) : 0;
+  var time = spotifyIsActive() ? spotifyCurrentPositionMs() / 1000 : (audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0);
+  var duration = spotifyIsActive() ? (spotifyState.durationMs / 1000) : (audio && isFinite(audio.duration) ? Number(audio.duration) : 0);
   var rate = audio && isFinite(audio.playbackRate) && audio.playbackRate > 0 ? Number(audio.playbackRate) : 1;
   return {
     time: Math.max(0, time),

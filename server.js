@@ -3938,6 +3938,41 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/spotify/lyric') {
+    const trackName = url.searchParams.get('trackName') || '';
+    const artistName = url.searchParams.get('artistName') || '';
+    const albumName = url.searchParams.get('albumName') || '';
+    const durationMs = parseInt(url.searchParams.get('durationMs') || '0', 10) || 0;
+    if (!trackName || !artistName) {
+      sendJSON(res, { lyric: '', tlyric: '', yrc: '', source: 'none' });
+      return;
+    }
+    try {
+      const params = new URLSearchParams({
+        track_name: trackName,
+        artist_name: artistName,
+        ...(albumName ? { album_name: albumName } : {}),
+        ...(durationMs > 0 ? { duration: String(Math.round(durationMs / 1000)) } : {}),
+      });
+      const resp = await fetchWithTimeout('https://lrclib.net/api/get?' + params.toString(), {
+        headers: { 'User-Agent': 'Mineradio/1.0' },
+      }, 8000);
+      if (resp.ok) {
+        const data = await resp.json();
+        const syncedLyrics = data.syncedLyrics || '';
+        if (syncedLyrics) {
+          sendJSON(res, { lyric: syncedLyrics, tlyric: '', yrc: '', source: 'lrclib' });
+          return;
+        }
+      }
+      sendJSON(res, { lyric: '', tlyric: '', yrc: '', source: 'none' });
+    } catch (err) {
+      console.error('[SpotifyLyric-LRCLIB]', err.message);
+      sendJSON(res, { lyric: '', tlyric: '', yrc: '', source: 'none' });
+    }
+    return;
+  }
+
   if (pn === '/api/podcast/search') {
     try {
       const kw = String(url.searchParams.get('keywords') || '').trim();
