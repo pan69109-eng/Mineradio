@@ -3910,7 +3910,7 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/spotify/search') {
     try {
       const kw = url.searchParams.get('keywords') || '';
-      const limit = Math.max(4, Math.min(20, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
+      const limit = Math.max(1, Math.min(10, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
       const songs = await handleSpotifySearch(kw, limit);
       sendJSON(res, { provider: 'spotify', songs });
     } catch (err) {
