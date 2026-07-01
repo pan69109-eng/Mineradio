@@ -222,6 +222,8 @@ const SPOTIFY_SCOPES = [
   'user-modify-playback-state',
   'playlist-read-private',
   'playlist-read-collaborative',
+  'playlist-modify-public',
+  'playlist-modify-private',
   'user-library-modify',
   'user-library-read',
 ].join(' ');
@@ -4415,6 +4417,63 @@ const server = http.createServer(async (req, res) => {
         status = 429;
         message = '请求过于频繁，请稍后再试';
       }
+      sendJSON(res, { error: message }, status);
+    }
+    return;
+  }
+
+  // ---------- Spotify 添加歌曲到歌单 ----------
+  if (pn === '/api/spotify/playlist/add-track') {
+    try {
+      const info = await getSpotifyLoginInfo();
+      if (!info.loggedIn) { sendJSON(res, { error: '请先登录 Spotify', LOGIN_REQUIRED: true }, 401); return; }
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const pid = body.pid || url.searchParams.get('pid');
+      const trackId = body.trackId || url.searchParams.get('trackId');
+      if (!pid || !trackId) { sendJSON(res, { error: 'Missing playlist id or track id' }, 400); return; }
+      const uri = 'spotify:track:' + trackId;
+      await spotifyApiRequest('POST', '/playlists/' + encodeURIComponent(pid) + '/items', { uris: [uri] });
+      sendJSON(res, { success: true, pid: pid, trackId: trackId });
+    } catch (err) {
+      console.error('[SpotifyAddTrack]', err);
+      let status = 500;
+      let message = err.message || 'Spotify 添加到歌单失败';
+      if (err.message === 'SPOTIFY_LOGIN_REQUIRED') {
+        status = 401;
+        message = '请先登录 Spotify';
+      } else if (err.statusCode === 403) {
+        status = 403;
+        message = '权限不足，请重新登录并同意歌单修改权限';
+      } else if (err.statusCode === 404) {
+        status = 404;
+        message = '歌单不存在';
+      } else if (err.statusCode === 429) {
+        status = 429;
+        message = '请求过于频繁，请稍后再试';
+      }
+      sendJSON(res, { error: message }, status);
+    }
+    return;
+  }
+
+  // ---------- Spotify 创建歌单 ----------
+  if (pn === '/api/spotify/playlist/create') {
+    try {
+      const info = await getSpotifyLoginInfo();
+      if (!info.loggedIn) { sendJSON(res, { error: '请先登录 Spotify', LOGIN_REQUIRED: true }, 401); return; }
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const name = String(body.name || url.searchParams.get('name') || '').trim();
+      if (!name) { sendJSON(res, { error: 'Missing playlist name' }, 400); return; }
+      const data = await spotifyApiRequest('POST', '/me/playlists', { name, public: false });
+      const playlist = spotifyMapPlaylist(data);
+      sendJSON(res, { success: true, playlist });
+    } catch (err) {
+      console.error('[SpotifyCreatePlaylist]', err);
+      let status = 500;
+      let message = err.message || 'Spotify 创建歌单失败';
+      if (err.message === 'SPOTIFY_LOGIN_REQUIRED') { status = 401; message = '请先登录 Spotify'; }
+      else if (err.statusCode === 403) { status = 403; message = '权限不足，请重新登录并同意歌单修改权限'; }
+      else if (err.statusCode === 429) { status = 429; message = '请求过于频繁，请稍后再试'; }
       sendJSON(res, { error: message }, status);
     }
     return;

@@ -17095,11 +17095,19 @@ function toggleLikeSearchResult(i) { if (playlist[i]) toggleLikeSong(playlist[i]
 function toggleLikeQueueIndex(i) { if (playQueue[i]) toggleLikeSong(playQueue[i]); }
 function toggleLikeDetailSong(song) { toggleLikeSong(song); }
 function openCollectModal(song) {
-  if (!isCloudSong(song)) {
-    showToast(songProviderKey(song) === 'qq' ? 'QQ 音乐收藏到歌单待登录接口接入' : '本地文件暂不支持收藏到网易云歌单');
+  var provider = songProviderKey(song);
+  if (provider === 'spotify') {
+    if (!spotifyLoginStatus.loggedIn) {
+      showToast('请先登录 Spotify');
+      showLoginModal();
+      return;
+    }
+  } else if (!isCloudSong(song)) {
+    showToast(provider === 'qq' ? 'QQ 音乐收藏到歌单待登录接口接入' : '本地文件暂不支持收藏到歌单');
     return;
+  } else {
+    if (!ensureLoggedInForAction()) return;
   }
-  if (!ensureLoggedInForAction()) return;
   collectTargetSong = song;
   renderCollectModal();
   openGsapModal(document.getElementById('collect-modal'));
@@ -17124,7 +17132,9 @@ function renderCollectModal() {
   var cover = songCoverSrc(song, 80);
   current.innerHTML = (cover ? '<img src="' + cover + '" alt="">' : '<div class="cover-placeholder"></div>') +
     '<div style="min-width:0"><div class="collect-title">' + escHtml(song.name || '当前歌曲') + '</div><div class="collect-sub">' + escHtml(song.artist || '') + '</div></div>';
-  if (!loginStatus.loggedIn) {
+  var collectProvider = songProviderKey(collectTargetSong);
+  var isLoggedIn = collectProvider === 'spotify' ? spotifyLoginStatus.loggedIn : loginStatus.loggedIn;
+  if (!isLoggedIn) {
     list.innerHTML = '<div class="collect-empty">登录后显示你的歌单</div>';
     return;
   }
@@ -17132,7 +17142,10 @@ function renderCollectModal() {
     list.innerHTML = miniQueueSkeleton();
     return;
   }
-  var mine = userPlaylists.filter(function(pl){ return !pl.subscribed; });
+  var mine = userPlaylists.filter(function(pl){
+    if (pl.subscribed) return false;
+    return songProviderKey(pl) === collectProvider;
+  });
   if (!mine.length) {
     list.innerHTML = '<div class="collect-empty">还没有可写入的歌单，可以先新建一个</div>';
     return;
@@ -17154,12 +17167,26 @@ function setCollectBusyPid(pid, busy) {
   });
 }
 async function createPlaylistFromCollect() {
-  if (!ensureLoggedInForAction()) return;
+  var provider = collectTargetSong ? songProviderKey(collectTargetSong) : 'netease';
+  if (provider === 'spotify') {
+    if (!spotifyLoginStatus.loggedIn) { showToast('请先登录 Spotify'); return; }
+  } else {
+    if (!ensureLoggedInForAction()) return;
+  }
   var input = document.getElementById('collect-new-name');
   var name = input ? input.value.trim() : '';
   if (!name) { showToast('先输入歌单名称'); return; }
   try {
-    var r = await apiJson('/api/playlist/create?name=' + encodeURIComponent(name));
+    var r;
+    if (provider === 'spotify') {
+      r = await apiJson('/api/spotify/playlist/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+      });
+    } else {
+      r = await apiJson('/api/playlist/create?name=' + encodeURIComponent(name));
+    }
     if (r && r.error) throw new Error(r.error);
     if (input) input.value = '';
     showToast('歌单已创建');
@@ -17206,20 +17233,32 @@ async function addCollectTargetToPlaylist(pid) {
   showToast('正在收藏到歌单...');
   try {
     var songId = String(collectTargetSong.id || '');
-    var r = await apiJson('/api/playlist/add-song', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: pid, id: songId })
-    });
+    var provider = songProviderKey(collectTargetSong);
+    var r;
+    if (provider === 'spotify') {
+      r = await apiJson('/api/spotify/playlist/add-track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pid: pid, trackId: songId })
+      });
+    } else {
+      r = await apiJson('/api/playlist/add-song', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pid: pid, id: songId })
+      });
+    }
     if (!(r && r.success)) throw new Error(collectResultMessage(r));
     showToast('已收藏到歌单');
     closeCollectModal();
     refreshUserPlaylists(true);
-    setTimeout(function(){
-      verifySongInPlaylist(pid, songId).then(function(ok){
-        if (!ok) console.warn('collect submitted but verify did not find song yet:', pid, songId);
-      });
-    }, 900);
+    if (provider !== 'spotify') {
+      setTimeout(function(){
+        verifySongInPlaylist(pid, songId).then(function(ok){
+          if (!ok) console.warn('collect submitted but verify did not find song yet:', pid, songId);
+        });
+      }, 900);
+    }
   } catch (err) {
     showToast(err && err.message ? err.message : '收藏失败');
   } finally {
