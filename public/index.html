@@ -19451,11 +19451,13 @@ async function fetchLyric(songOrId, token) {
     if (lines.length && lines[0].fallback) timingSource = 'fallback';
     setOriginalLyricsState(lines, hasNativeKaraoke, timingSource);
     applyPreferredLyricsForCurrent(true);
+    if (timingSource === 'fallback') showToast('该曲歌词暂未收录');
   } catch (e) {
     if (token !== trackSwitchToken) return;
     var fallbackLines = withLyricFallback([]);
     setOriginalLyricsState(fallbackLines, false, 'fallback');
     applyPreferredLyricsForCurrent(true);
+    showToast('歌词获取失败');
   }
 }
 function currentLyricFallbackText() {
