@@ -4,6 +4,13 @@
 
 > 修改声明（GPL-3.0 §5(a)）：以下 Spotify 接入为外部贡献，新增于 2026-06-28，贡献者与逐项改动以 Git 提交历史为准。
 
+- Spotify 红心/收藏功能：支持多平台收藏状态同步，likedSongMap 改用 provider:id 复合键解决多平台 ID 冲突；syncLikeStatusForSongs 支持多平台并行查询，未登录平台自动跳过；启动时自动同步已登录平台的红心状态；/me/library/contains 改为分批查询（每批 40 首），避免 URI 过长触发限制。
+- Spotify 收藏到歌单：支持将 Spotify 歌曲添加到已有歌单或创建新私有歌单；OAuth Scopes 新增 playlist-modify-public / playlist-modify-private；按平台筛选歌单列表，避免跨平台混显。
+- Spotify 歌词获取：通过 LRCLIB 公开 API 自动匹配同步歌词，无需额外配置；歌词未收录时弹窗提示用户。
+- 搜索栏 All 模式新增 Spotify 歌曲，与网易云、QQ 统一参与评分排序，返回前 18 首。
+- Spotify 歌单 API 迁移到 /items 端点，兼容 item.track 与 item.item 两种响应格式。
+- Spotify 搜索 limit 适配 2026 API 变更（0-10），修复此前 clamp 到 20 导致的 HTTP 400。
+- 新增 Spotify 每日推荐与私人雷达接入指南（`docs/spotify-recommend-guide.md`），供后续多平台推荐功能开发参考。
 - 新增 Spotify 音乐源：搜索、歌单读取（私有/协作）、Web Playback SDK 整曲播放（需 Spotify Premium）。
 - Spotify 登录采用 **BYO Client ID + Authorization Code with PKCE**：由用户在 Spotify 开发者后台自建应用并在登录区域填入自己的 Client ID，软件不内置、不共享任何 Client ID/Secret，也不使用 Client Secret。登录区域新增 Client ID 输入、Redirect URI 展示与复制、保存按钮；换 Client ID 会自动清除旧登录态与 PKCE 临时态。
 - 多平台账号「我三个都要」：网易云 / QQ / Spotify 三家可并排展示，依次补登缺失平台，已登录平台数 ≥2 时保持并排。
