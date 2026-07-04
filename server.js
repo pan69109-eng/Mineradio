@@ -489,6 +489,24 @@ async function handleSpotifyUserPlaylists() {
   return { provider: 'spotify', loggedIn: true, playlists };
 }
 
+async function handleSpotifySavedTracks() {
+  const info = await getSpotifyLoginInfo();
+  if (!info.loggedIn) return { provider: 'spotify', loggedIn: false, ids: [] };
+  const ids = [];
+  let offset = 0;
+  const limit = 50;
+  while (true) {
+    const data = await spotifyApiGet('/me/tracks', { limit: String(limit), offset: String(offset) });
+    const items = (data && data.items) || [];
+    for (const item of items) {
+      if (item && item.track && item.track.id) ids.push(item.track.id);
+    }
+    if (!data || !data.next || items.length < limit) break;
+    offset += limit;
+  }
+  return { provider: 'spotify', loggedIn: true, ids };
+}
+
 async function handleSpotifyPlaylistTracks(id) {
   const info = await getSpotifyLoginInfo();
   if (!info.loggedIn) return { provider: 'spotify', loggedIn: false, tracks: [] };
@@ -3968,6 +3986,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/spotify/saved-tracks') {
+    try { sendJSON(res, await handleSpotifySavedTracks()); }
+    catch (err) { console.error('[SpotifySavedTracks]', err); sendJSON(res, { provider: 'spotify', loggedIn: false, error: err.message, ids: [] }, 500); }
+    return;
+  }
+
   if (pn === '/api/spotify/lyric') {
     const trackName = url.searchParams.get('trackName') || '';
     const artistName = url.searchParams.get('artistName') || '';
@@ -4349,10 +4373,14 @@ const server = http.createServer(async (req, res) => {
     try {
       const ids = String(url.searchParams.get('ids') || '').split(',').filter(Boolean);
       if (!ids.length) { sendJSON(res, { error: 'Missing ids', liked: {} }, 400); return; }
-      const uris = ids.map(id => 'spotify:track:' + id);
-      const data = await spotifyApiGet('/me/library/contains', { uris: uris.join(',') });
       const liked = {};
-      ids.forEach((id, i) => { liked[id] = !!data[i]; });
+      const BATCH_SIZE = 40;
+      for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+        const batch = ids.slice(i, i + BATCH_SIZE);
+        const uris = batch.map(id => 'spotify:track:' + id);
+        const data = await spotifyApiGet('/me/library/contains', { uris: uris.join(',') });
+        batch.forEach((id, j) => { liked[id] = !!data[j]; });
+      }
       sendJSON(res, { loggedIn: true, ids, liked });
     } catch (err) {
       console.error('[SpotifyLikeCheck]', err);

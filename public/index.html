@@ -17025,6 +17025,18 @@ function syncLikeStatusForSong(song) {
   if (!song || !song.id) { updateLikeButtons(song); return; }
   syncLikeStatusForSongs([song]);
 }
+async function fetchSpotifyLikedSongs() {
+  if (!spotifyLoginStatus.loggedIn) return;
+  try {
+    var r = await apiJson('/api/spotify/saved-tracks');
+    if (r && r.ids && r.ids.length) {
+      r.ids.forEach(function(id) { likedSongMap['spotify:' + id] = true; });
+      safeRenderQueuePanel('spotify-liked-sync', { scrollCurrent: miniQueueOpen });
+      refreshSearchResultActionStates();
+      updateLikeButtons();
+    }
+  } catch (e) { console.warn('[SpotifyLikedSync]', e); }
+}
 function isLikedPlaylistContext(id, title, meta) {
   var sid = String(id || '');
   var text = String(title || (meta && meta.name) || '').trim();
@@ -20282,7 +20294,7 @@ async function loadPlaylistIntoQueueById(id, autoplay, title) {
     if (!r.tracks || !r.tracks.length) { showToast('歌单为空'); return; }
     playQueue = r.tracks.map(cloneSong);
     if (isNeteasePlaylist && isLikedPlaylistContext(id, title, r.playlist)) markSongsLiked(playQueue, true);
-    if (isNeteasePlaylist) syncLikeStatusForSongs(playQueue);
+    if (isNeteasePlaylist || spotifyPlaylistId) syncLikeStatusForSongs(playQueue);
     currentIdx = 0;
     safeRenderQueuePanel('playlist-load');
     safeSwitchPlaylistTab('queue', 'playlist-load');
@@ -24048,6 +24060,7 @@ async function openSpotifyLogin() {
         activeAccountProvider = 'spotify';
         if (typeof closeLoginModal === 'function') closeLoginModal();
         refreshUserPlaylists(true);
+        fetchSpotifyLikedSongs();
       } else if (tries >= 120) {
         stopSpotifyLoginPoll();
       }
@@ -27113,6 +27126,7 @@ if (startupLoginStatusPromise && startupLoginStatusPromise.then) {
       refreshUserPlaylists(true);
       loadHomeDiscover(true);
     }
+    if (spotifyLoginStatus.loggedIn) fetchSpotifyLikedSongs();
     if (document.body.classList.contains('splash-active')) return;
     var homeShown = updateEmptyHomeVisibility({ forceLoad: hasAnyPlatformLogin() });
     if (!hasAnyPlatformLogin()) maybeRunStartupLoginGuide('status');
